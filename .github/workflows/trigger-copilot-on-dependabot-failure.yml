@@ -2,31 +2,8 @@ name: trigger-copilot-on-dependabot-failure
 
 on:
   workflow_run:
-    # ⚠️  GitHub does NOT support globs/regex in this list — exact names only.
-    #     The job body uses pattern matching (RSpec*, Lint*, Tekton*, Rails*)
-    #     so CI-command generation is automatic for new variants.
-    #     When adding a NEW workflow, just append its exact name below.
     workflows:
-      # ── RSpec* ──
-      - "RSpec - Unit (PR)"
-      - "RSpec - Unit (Darwin)"
-      - "RSpec - Unit (RoR Upgrade)"
-      - "RSpec - Unit (Master)"
-      - "RSpec - Functional (PR)"
-      - "RSpec - Functional (Darwin)"
-      - "RSpec - Functional (RoR Upgrade)"
-      - "RSpec - Functional"
-      # ── Lint* ──
-      - "Lint - RuboCop"
-      - "Lint - Commits"
-      - "Lint - External Secrets"
-      - "Lint - Helm"
-      # ── Rails* ──
-      - "Rails - Boot Test"
-      - "Rails - Packwerk Modularization Check"
-      # ── Tekton PaC* ──
-      - "Tekton PaC / full-suite"
-      - "Tekton PaC / ror-upgrade-suite"
+      - "Tests"
     types: [completed]
     branches:
       - 'dependabot/**'
@@ -662,7 +639,7 @@ jobs:
           - Do not add or remove gems; adapt code/tests to the Dependabot versions.
           - Do not downgrade dependencies.
           - Avoid refactors or new features/tests unrelated to the fix.
-          - All commits MUST follow the format: \`ci(MIG-7295): brief description\` — type and Jira scope are required by commitlint."
+          - Keep commit messages concise and CI-focused."
 
           elif [[ "${STALL_STREAK}" -ge "${MAX_STALL_ATTEMPTS}" ]]; then
             HEADER="## 🚩 Escalated Fix CI Failures (Attempt #${ATTEMPT} of ${MAX_COPILOT_RETRIES})"
@@ -673,7 +650,7 @@ jobs:
           - Do not downgrade dependencies.
           - Do not re-apply changes already tried in earlier attempts.
           - Avoid refactors or new features/tests unrelated to the fix.
-          - All commits MUST follow the format: \`ci(MIG-7390): brief description\` — type and Jira scope are required by commitlint."
+          - Keep commit messages concise and CI-focused."
 
           else
             HEADER="## 🔄 Copilot: Retry Fix CI Failures (Attempt #${ATTEMPT} of ${MAX_COPILOT_RETRIES})"
@@ -684,7 +661,7 @@ jobs:
           - Do not downgrade dependencies.
           - Do not re-apply changes already tried.
           - Avoid refactors or new features/tests unrelated to the fix.
-          - All commits MUST follow the format: \`ci(MIG-7390): brief description\` — type and Jira scope are required by commitlint."
+          - Keep commit messages concise and CI-focused."
           fi
 
           FAILED_JOBS_JSON=$(cat /tmp/failed_jobs.json 2>/dev/null || echo '[]')
@@ -752,158 +729,16 @@ jobs:
           ${PREV_SECTION}"
           fi
 
-          # ── CI variant commands for the failing workflow ────────────────────
-          # Pattern-based: new RSpec*/Lint*/Rails*/Tekton* variants handled automatically.
-          if [[ "${WORKFLOW_NAME}" == RSpec*Darwin* ]]; then
-            VARIANT_LABEL="Darwin — SAFETY_EVENTS_MODULARIZATION_DB_SWITCH_ENABLED=true"
+          # ── CI commands for this repository's main workflow ────────────────
+          if [[ "${WORKFLOW_NAME}" == "Tests" ]]; then
+            VARIANT_LABEL="Rails Minitest — prepare DB and run test suite"
             printf '%s\n' \
               '```bash' \
-              '# Model + lib unit tests (Darwin variant)' \
-              'SAFETY_EVENTS_MODULARIZATION_DB_SWITCH_ENABLED=true bundle exec rspec --tag model --tag lib' \
+              '# Prepare test database' \
+              'bin/rails test:prepare' \
               '' \
-              '# All unit tests (Darwin variant)' \
-              'SAFETY_EVENTS_MODULARIZATION_DB_SWITCH_ENABLED=true pipeline/rspec/rspec_unit.sh' \
-              '' \
-              '# Full functional tests (Darwin variant)' \
-              'SAFETY_EVENTS_MODULARIZATION_DB_SWITCH_ENABLED=true pipeline/rspec/rspec_functional.sh' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == RSpec*RoR\ Upgrade* ]]; then
-            VARIANT_LABEL="RoR Upgrade — RAILS_NEXT=true, Ruby 3.3.4, Bundler 2.6.9"
-            printf '%s\n' \
-              '```bash' \
-              '# Install RoR Upgrade dependencies first' \
-              'pipeline/rspec/bundler_install_ror_upgrade.sh' \
-              '' \
-              '# Model + lib unit tests (RoR Upgrade variant)' \
-              'RAILS_NEXT=true bundle exec rspec --tag model --tag lib' \
-              '' \
-              '# All unit tests (RoR Upgrade variant)' \
-              'RAILS_NEXT=true pipeline/rspec/rspec_unit.sh' \
-              '' \
-              '# Functional tests (RoR Upgrade variant)' \
-              'RAILS_NEXT=true pipeline/rspec/rspec_functional.sh' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == RSpec* ]]; then
-            # Catch-all for any other RSpec variant (PR, Master, Functional, etc.)
-            VARIANT_LABEL="RSpec — unit + functional tests"
-            printf '%s\n' \
-              '```bash' \
-              '# Model + lib unit tests' \
-              'bundle exec rspec --tag model --tag lib' \
-              '' \
-              '# All unit tests' \
-              'pipeline/rspec/rspec_unit.sh' \
-              '' \
-              '# Functional tests (changed files or all)' \
-              'pipeline/rspec/rspec_functional.sh' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == "Lint - RuboCop" ]]; then
-            VARIANT_LABEL="RuboCop — changed Ruby files (full repo when Gemfile/.rubocop* changed)"
-            printf '%s\n' \
-              '```bash' \
-              '# RuboCop on changed Ruby files (full repo if Gemfile/.rubocop* changed)' \
-              'bundle exec rubocop --display-cop-names --display-style-guide' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == "Lint - Commits" ]]; then
-            VARIANT_LABEL="Commitlint — commit message format validation"
-            printf '%s\n' \
-              '```bash' \
-              '# Validate commit messages against commitlint rules' \
-              'npx commitlint --from HEAD~1 --to HEAD' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == "Lint - External Secrets" ]]; then
-            VARIANT_LABEL="External Secrets — validate ExternalSecret manifests"
-            printf '%s\n' \
-              '```bash' \
-              '# Validate ExternalSecret YAML manifests' \
-              'script/lint_external_secrets.sh' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == "Lint - Helm" ]]; then
-            VARIANT_LABEL="Helm Lint — validate Helm chart templates"
-            printf '%s\n' \
-              '```bash' \
-              '# Lint all Helm charts' \
-              'helm lint charts/*/' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == Lint* ]]; then
-            # Catch-all for any future Lint variant
-            VARIANT_LABEL="Lint — ${WORKFLOW_NAME}"
-            printf '%s\n' \
-              '```bash' \
-              '# Run the linter identified by the failing workflow' \
-              "# Workflow: ${WORKFLOW_NAME}" \
-              '# Check the workflow YAML for the exact lint command.' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == "Rails - Boot Test" ]]; then
-            VARIANT_LABEL="Rails Boot — Zeitwerk autoloading + Rails console boot"
-            printf '%s\n' \
-              '```bash' \
-              '# Zeitwerk autoloading check' \
-              'bundle exec rails zeitwerk:check' \
-              '' \
-              '# Rails console boot test (must exit cleanly within 1 minute)' \
-              'echo exit | bundle exec rails console' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == "Rails - Packwerk Modularization Check" ]]; then
-            VARIANT_LABEL="Packwerk — modularization boundary validation"
-            printf '%s\n' \
-              '```bash' \
-              '# Validate packwerk.yml configuration files' \
-              'bin/packwerk validate' \
-              '' \
-              '# Check for boundary violations across the codebase' \
-              'bin/packwerk check' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == Rails* ]]; then
-            # Catch-all for any future Rails variant
-            VARIANT_LABEL="Rails — ${WORKFLOW_NAME}"
-            printf '%s\n' \
-              '```bash' \
-              '# Run the Rails check identified by the failing workflow' \
-              "# Workflow: ${WORKFLOW_NAME}" \
-              '# Check the workflow YAML for the exact command.' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == Tekton\ PaC*ror-upgrade* ]]; then
-            VARIANT_LABEL="Tekton PaC RoR Upgrade — RAILS_NEXT=true full test suite"
-            printf '%s\n' \
-              '```bash' \
-              '# Install RoR Upgrade dependencies first' \
-              'pipeline/rspec/bundler_install_ror_upgrade.sh' \
-              '' \
-              '# Full unit tests (RoR Upgrade variant)' \
-              'RAILS_NEXT=true pipeline/rspec/rspec_unit.sh' \
-              '' \
-              '# Functional tests (RoR Upgrade variant)' \
-              'RAILS_NEXT=true pipeline/rspec/rspec_functional.sh' \
-              '```' > /tmp/ci_commands.md
-
-          elif [[ "${WORKFLOW_NAME}" == Tekton\ PaC* ]]; then
-            # Catch-all for Tekton PaC (e.g., full-suite and future variants)
-            VARIANT_LABEL="Tekton PaC — full CI suite"
-            printf '%s\n' \
-              '```bash' \
-              '# Model + lib unit tests' \
-              'bundle exec rspec --tag model --tag lib' \
-              '' \
-              '# All unit tests' \
-              'pipeline/rspec/rspec_unit.sh' \
-              '' \
-              '# Functional tests' \
-              'pipeline/rspec/rspec_functional.sh' \
-              '' \
-              '# Rails boot + Zeitwerk check' \
-              'bundle exec rails zeitwerk:check' \
+              '# Run full Rails test suite' \
+              'bin/rails test' \
               '```' > /tmp/ci_commands.md
 
           else

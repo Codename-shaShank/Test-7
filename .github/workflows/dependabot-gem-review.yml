@@ -30,7 +30,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.3.0"   
+          ruby-version: .ruby-version
           bundler-cache: false
 
       - name: Fetch PR Gemfile.lock safely
@@ -52,10 +52,34 @@ jobs:
           cat "$GEM_REVIEW_PATH"
           echo "=== end ==="
 
+      - name: Add stable marker to dependency summary
+        run: |
+          marker='<!-- dependabot-gem-review -->'
+          if ! grep -Fqx "$marker" "$GEM_REVIEW_PATH"; then
+            tmp_file="$(mktemp)"
+            {
+              printf '%s\n\n' "$marker"
+              cat "$GEM_REVIEW_PATH"
+            } > "$tmp_file"
+            mv "$tmp_file" "$GEM_REVIEW_PATH"
+          fi
+
+      - name: Find existing dependency summary comment
+        if: github.event.pull_request != null
+        id: find_dependency_summary_comment
+        uses: peter-evans/find-comment@v3
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- dependabot-gem-review -->'
+
       - name: Comment on PR with dependency summary
         if: github.event.pull_request != null
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ github.token }}
           issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find_dependency_summary_comment.outputs.comment-id }}
           body-file: ${{ env.GEM_REVIEW_PATH }}
+          edit-mode: replace
