@@ -586,7 +586,7 @@ jobs:
 
           GEM_REVIEW_BODY=$(
             gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-              | jq -rs '[.[][] | select(.body | startswith("## Dependency change summary")) | .body] | last // empty' \
+              | jq -rs '[.[][] | select(.body | contains("<!-- dependabot-gem-review -->")) | .body] | last // empty' \
             || echo ''
           )
 
@@ -643,12 +643,13 @@ jobs:
 
           elif [[ "${STALL_STREAK}" -ge "${MAX_STALL_ATTEMPTS}" ]]; then
             HEADER="## 🚩 Escalated Fix CI Failures (Attempt #${ATTEMPT} of ${MAX_COPILOT_RETRIES})"
-            CONTEXT="**Stall streak ${STALL_STREAK}/${MAX_STALL_ATTEMPTS}: no improvement in failed jobs/error signatures. Change strategy now.** Stop editing the same spots; follow stack traces and gem migration notes. Be surgical (≤8 files) and avoid repeating prior edits."
-            CONSTRAINTS_BLOCK="### Constraints (escalated)
+            CONTEXT="**Stall streak ${STALL_STREAK}/${MAX_STALL_ATTEMPTS}: no improvement in failed jobs/error signatures. Stop editing the same spots.** The earlier attempts on this branch are evidence that code-level workarounds (require load-order tweaks, monkeypatches, etc.) are **not** the fix. The remaining failure is almost certainly a transitive gem incompatibility pulled in by the Dependabot bump. Shift strategy: inspect the Gemfile.lock diff in the dependency summary above, identify which transitive gem had a **major** version change, and pin it in the Gemfile. Do **not** revert the Dependabot-requested direct gem."
+            CONSTRAINTS_BLOCK="### Constraints (escalated — overrides earlier attempts)
           - Do not modify more than 8 files.
-          - Do not add or remove gems; adapt code/tests to the Dependabot versions.
-          - Do not downgrade dependencies.
-          - Do not re-apply changes already tried in earlier attempts.
+          - Do **not** change the Dependabot-requested direct gem's version.
+          - You **MAY** add a gem entry to the Gemfile to pin a **transitive** dependency when a major bump of that transitive breaks compatibility with other direct deps. Regenerate Gemfile.lock.
+          - Prefer pinning transitives in the Gemfile over code workarounds.
+          - Do not re-apply changes already tried in earlier attempts (check prior commits on this branch).
           - Avoid refactors or new features/tests unrelated to the fix.
           - Keep commit messages concise and CI-focused."
 
